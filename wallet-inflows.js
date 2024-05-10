@@ -6,7 +6,7 @@ dotenv.config();
 
 const walletAddress = process.env.WALLET_ADDRESS;
 
-let conversionRates = {}; // Cache for conversion rates
+let conversionRates = {};
 
 async function fetchConversionRate(token) {
     try {
@@ -25,7 +25,6 @@ async function fetchConversionRate(token) {
             throw new Error('Unsupported token');
         }
 
-        // Check if conversion rate is already cached
         if (conversionRates[tokenName]) {
             return conversionRates[tokenName];
         }
@@ -33,7 +32,6 @@ async function fetchConversionRate(token) {
         const response = await axios.get(`https://api.coingecko.com/api/v3/simple/price?ids=${tokenName}&vs_currencies=usd`);
         const rate = response.data[tokenName].usd;
 
-        // Cache the conversion rate
         conversionRates[tokenName] = rate;
 
         return rate;
@@ -109,7 +107,8 @@ async function getTotalUSDValueOfAllTokens() {
         totalUSDValue += usdValueForToken;
     }
 
-    console.log(`Total USD value of all tokens received in the last 24 hours: $${totalUSDValue.toFixed(2)}`);
+    const totalUSDValuePerMonth = totalUSDValue * 30;
+    console.log(`Total USD value of all tokens received in the last 24 hours: $${totalUSDValue.toFixed(2)} (~$${totalUSDValuePerMonth.toFixed(2)} USD per month)`);
 }
 
 getTotalUSDValueOfAllTokens();
