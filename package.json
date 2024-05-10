@@ -6,11 +6,10 @@
   "type": "module",
   "dependencies": {
     "axios": "^1.6.8",
-    "ethers": "^6.11.1",
-    "multicall": "^1.0.1",
-    "web3": "^4.7.0"
+    "dotenv": "^16.4.5",
+    "web3": "^4.8.0"
   },
   "scripts": {
-    "test": "node wallet-inflows.js"
+    "start": "node wallet-inflows.js"
   }
 }

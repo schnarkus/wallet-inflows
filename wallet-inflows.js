@@ -1,57 +1,42 @@
 import Web3 from 'web3';
 import axios from 'axios';
+import dotenv from 'dotenv';
+import providerData from './providerData.js';
+dotenv.config();
 
-const walletAddress = '0xfB41Cbf2ce16E8f626013a2F465521d27BA9a610'
+const walletAddress = process.env.WALLET_ADDRESS;
 
-const providerData = [
-    {
-        token: "oweth",
-        providerUrl: 'https://optimism.meowrpc.com',
-        tokenAddress: '0x4200000000000000000000000000000000000006',
-        blockTimeSeconds: 2n
-    },
-    {
-        token: "bweth",
-        providerUrl: 'https://base.meowrpc.com',
-        tokenAddress: '0x4200000000000000000000000000000000000006',
-        blockTimeSeconds: 2n
-    },
-    {
-        token: "aweth",
-        providerUrl: 'https://arbitrum.meowrpc.com',
-        tokenAddress: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',
-        blockTimeSeconds: 1n, // actually 0.25, so times 4 the blocks
-        multiplier: 4n
-    },
-    {
-        token: "wftm",
-        providerUrl: 'https://endpoints.omniatech.io/v1/fantom/mainnet/public',
-        tokenAddress: '0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83',
-        blockTimeSeconds: 1n
-    },
-    {
-        token: "wbnb",
-        providerUrl: 'https://bsc.meowrpc.com',
-        tokenAddress: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c',
-        blockTimeSeconds: 3n
-    },
-];
+let conversionRates = {}; // Cache for conversion rates
 
 async function fetchConversionRate(token) {
     try {
         let tokenName;
-        if (token === 'oweth' || token === 'bweth' || token === 'aweth') {
+        if (token === 'oweth' || token === 'bweth' || token === 'aweth' || token === 'leth') {
             tokenName = 'ethereum';
         } else if (token === 'wftm') {
             tokenName = 'fantom';
         } else if (token === 'wbnb') {
             tokenName = 'binancecoin';
+        } else if (token === 'wmatic') {
+            tokenName = 'matic-network';
+        } else if (token === 'wavax') {
+            tokenName = 'avalanche-2';
         } else {
             throw new Error('Unsupported token');
         }
 
+        // Check if conversion rate is already cached
+        if (conversionRates[tokenName]) {
+            return conversionRates[tokenName];
+        }
+
         const response = await axios.get(`https://api.coingecko.com/api/v3/simple/price?ids=${tokenName}&vs_currencies=usd`);
-        return response.data[tokenName].usd;
+        const rate = response.data[tokenName].usd;
+
+        // Cache the conversion rate
+        conversionRates[tokenName] = rate;
+
+        return rate;
     } catch (error) {
         console.error('Error fetching conversion rate:', error);
         return null;
@@ -74,11 +59,9 @@ async function getTotalTokenReceivedLast24Hours(token) {
                 const currentBlock = await web3.eth.getBlockNumber();
                 const secondsInDay = 24n * 60n * 60n;
 
-                let blocksPerDay;
-                if (token === "aweth") {
-                    blocksPerDay = (secondsInDay / blockTimeSeconds) * multiplier;
-                } else {
-                    blocksPerDay = secondsInDay / blockTimeSeconds;
+                let blocksPerDay = secondsInDay / blockTimeSeconds;
+                if (multiplier) {
+                    blocksPerDay *= multiplier;
                 }
 
                 const twentyFourHoursAgoBlock = currentBlock - blocksPerDay;
@@ -129,4 +112,4 @@ async function getTotalUSDValueOfAllTokens() {
     console.log(`Total USD value of all tokens received in the last 24 hours: $${totalUSDValue.toFixed(2)}`);
 }
 
-getTotalUSDValueOfAllTokens(); 
+getTotalUSDValueOfAllTokens();
