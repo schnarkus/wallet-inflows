@@ -36,12 +36,12 @@ const providerData = [
     tokenAddress: "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c",
     blockTimeSeconds: 3n,
   },
-  // {
-  //   token: "wmatic",
-  //   providerUrl: 'https://polygon.meowrpc.com',
-  //   tokenAddress: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270',
-  //   blockTimeSeconds: 2n
-  // },
+  {
+    token: "wmatic",
+    providerUrl: 'https://endpoints.omniatech.io/v1/matic/mainnet/public',
+    tokenAddress: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270',
+    blockTimeSeconds: 2n
+  },
   {
     token: "wavax",
     providerUrl: 'https://avax.meowrpc.com',
