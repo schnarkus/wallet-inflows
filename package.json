@@ -10,6 +10,7 @@
     "web3": "^4.8.0"
   },
   "scripts": {
-    "start": "node wallet-inflows.js"
+    "inflows": "node wallet-inflows.js",
+    "income": "node income.js"
   }
 }
