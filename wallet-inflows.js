@@ -5,110 +5,73 @@ import providerData from './providerData.js';
 dotenv.config();
 
 const walletAddress = process.env.WALLET_ADDRESS;
+const coingeckoApiKey = process.env.COINGECKO_API_KEY;
 
-let conversionRates = {};
-
-async function fetchConversionRate(token) {
+async function getEthUsdRate() {
+    if (getEthUsdRate.cache !== undefined) return getEthUsdRate.cache;
     try {
-        let tokenName;
-        if (token === 'oweth' || token === 'bweth' || token === 'aweth' || token === 'leth') {
-            tokenName = 'ethereum';
-        } else if (token === 'wftm') {
-            tokenName = 'fantom';
-        } else if (token === 'wbnb') {
-            tokenName = 'binancecoin';
-        } else if (token === 'wmatic') {
-            tokenName = 'matic-network';
-        } else if (token === 'wavax') {
-            tokenName = 'avalanche-2';
-        } else {
-            throw new Error('Unsupported token');
-        }
-
-        if (conversionRates[tokenName]) {
-            return conversionRates[tokenName];
-        }
-
-        const response = await axios.get(`https://api.coingecko.com/api/v3/simple/price?ids=${tokenName}&vs_currencies=usd`);
-        const rate = response.data[tokenName].usd;
-
-        conversionRates[tokenName] = rate;
-
-        return rate;
+        const { data } = await axios.get(
+            'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd',
+            {
+                headers: {
+                    'accept': 'application/json',
+                    'x-cg-demo-api-key': coingeckoApiKey
+                }
+            }
+        );
+        getEthUsdRate.cache = data.ethereum.usd;
+        return getEthUsdRate.cache;
     } catch (error) {
-        console.error('Error fetching conversion rate:', error);
+        console.error('Error fetching ETH price:', error?.response?.data || error);
         return null;
     }
 }
 
-async function getTotalTokenReceivedLast24Hours(token) {
+async function getTotalTokenReceivedLast24Hours({ providerUrl, tokenAddress, blockTimeSeconds, multiplier, token }) {
+    const web3 = new Web3(providerUrl);
+    const currentBlock = await web3.eth.getBlockNumber();
+    const secondsInDay = 24n * 60n * 60n;
+    let blocksPerDay = secondsInDay / BigInt(blockTimeSeconds);
+    if (multiplier) blocksPerDay *= BigInt(multiplier);
+    const fromBlock = '0x' + (currentBlock - blocksPerDay).toString(16);
+
+    const filter = {
+        address: tokenAddress,
+        fromBlock,
+        toBlock: 'latest',
+        topics: [
+            web3.utils.sha3('Transfer(address,address,uint256)'),
+            null,
+            web3.utils.padLeft(walletAddress.toLowerCase(), 64)
+        ]
+    };
+
+    let logs;
     try {
-        const conversionRate = await fetchConversionRate(token);
-        if (!conversionRate) return;
-
-        let totalTokenReceivedUSD = 0;
-
-        for (const providerInfo of providerData) {
-            if (providerInfo.token === token) {
-                const { providerUrl, tokenAddress, blockTimeSeconds, multiplier } = providerInfo;
-
-                const web3 = new Web3(providerUrl);
-
-                const currentBlock = await web3.eth.getBlockNumber();
-                const secondsInDay = 24n * 60n * 60n;
-
-                let blocksPerDay = secondsInDay / blockTimeSeconds;
-                if (multiplier) {
-                    blocksPerDay *= multiplier;
-                }
-
-                const twentyFourHoursAgoBlock = currentBlock - blocksPerDay;
-
-                const transferFilter = {
-                    address: tokenAddress,
-                    fromBlock: twentyFourHoursAgoBlock,
-                    toBlock: 'latest',
-                    topics: [
-                        web3.utils.sha3('Transfer(address,address,uint256)'),
-                        null,
-                        web3.utils.padLeft(walletAddress.toLowerCase(), 64)
-                    ]
-                };
-
-                const logs = await web3.eth.getPastLogs(transferFilter);
-
-                let totalTokenReceivedWei = BigInt(0);
-
-                for (const log of logs) {
-                    const amountWei = BigInt(log.data);
-                    totalTokenReceivedWei += amountWei;
-                }
-
-                const totalTokenReceivedEther = web3.utils.fromWei(totalTokenReceivedWei.toString(), 'ether');
-                const totalTokenReceivedUSDForProvider = totalTokenReceivedEther * conversionRate;
-
-                console.log(`Total ${token.toUpperCase()} received: ${totalTokenReceivedEther} (~$${totalTokenReceivedUSDForProvider.toFixed(2)} USD)`);
-                totalTokenReceivedUSD += totalTokenReceivedUSDForProvider;
-            }
-        }
-
-        return totalTokenReceivedUSD;
-    } catch (error) {
-        console.error('Error occurred:', error);
+        logs = await web3.eth.getPastLogs(filter);
+    } catch (err) {
+        console.error(`[${token}] Log fetch error:`, err?.message || err);
         return 0;
     }
+
+    let totalWei = logs.reduce((acc, log) => acc + BigInt(log.data), 0n);
+    return Number(totalWei) / 1e18;
 }
 
-async function getTotalUSDValueOfAllTokens() {
-    let totalUSDValue = 0;
-
-    for (const { token } of providerData) {
-        const usdValueForToken = await getTotalTokenReceivedLast24Hours(token);
-        totalUSDValue += usdValueForToken;
+async function main() {
+    const ethUsd = await getEthUsdRate();
+    if (!ethUsd) {
+        console.error('ETH price unavailable, aborting.');
+        return;
     }
-
-    const totalUSDValuePerMonth = totalUSDValue * 30;
-    console.log(`Total USD value of all tokens received in the last 24 hours: $${totalUSDValue.toFixed(2)} (~$${totalUSDValuePerMonth.toFixed(2)} USD per month)`);
+    let totalUsdDay = 0;
+    for (const info of providerData) {
+        const eth = await getTotalTokenReceivedLast24Hours(info);
+        const usd = eth * ethUsd;
+        console.log(`Total ${info.token.toUpperCase()} received: ${eth} (~$${usd.toFixed(2)} USD)`);
+        totalUsdDay += usd;
+    }
+    console.log(`Total USD value of all ETH tokens received in last 24h: $${totalUsdDay.toFixed(2)} (~$${(totalUsdDay * 30).toFixed(2)} per month)`);
 }
 
-getTotalUSDValueOfAllTokens();
+main();

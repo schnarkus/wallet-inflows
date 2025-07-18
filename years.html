@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Yearly Compound Yield Calculator</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      background: #f6f8fa;
+      color: #222;
+      margin: 0;
+      padding: 2rem;
+    }
+    .container {
+      max-width: 650px;
+      margin: 2rem auto;
+      padding: 2rem;
+      background: #fff;
+      border-radius: 1.25rem;
+      box-shadow: 0 2px 12px #0001;
+    }
+    h2 {
+      text-align: center;
+      margin-bottom: 1.5rem;
+    }
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem 2rem;
+      margin-bottom: 1.8rem;
+      align-items: end;
+    }
+    .controls label {
+      font-weight: 500;
+      margin-bottom: 0.15rem;
+      display: block;
+    }
+    .controls input[type=range] { width: 100%; }
+    .control-value { font-weight: 600; margin-left: 0.6rem; }
+    .currency-switch {
+      grid-column: 1/-1;
+      text-align: right;
+      margin-top: 0.1rem;
+    }
+    .currency-switch label {
+      font-weight: 600;
+      font-size: 1.07rem;
+      margin-right: 1rem;
+      color: #34495e;
+    }
+    .currency-switch select {
+      font-size: 1.07rem;
+      padding: 0.23rem 0.7rem;
+      border-radius: 0.5rem;
+      border: 1px solid #bbb;
+      background: #f9f9fb;
+      transition: border 0.2s;
+    }
+    .currency-switch select:focus {
+      outline: none;
+      border: 1.5px solid #4686f7;
+    }
+    .config-card {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.5rem 1.5rem;
+      background: #f1f3f7;
+      border-radius: 0.8rem;
+      padding: 1rem 1.5rem;
+      margin-bottom: 2.2rem;
+      box-shadow: 0 1px 4px #0001;
+      font-size: 1rem;
+      min-height: 4.2rem;
+      align-items: center;
+    }
+    .config-card b { font-weight: 600; }
+    canvas { margin-top: 1rem; }
+    @media (max-width: 600px) {
+      .container { padding: 1rem }
+      .controls { grid-template-columns: 1fr; }
+      .currency-switch { text-align: left; }
+      .config-card { grid-template-columns: 1fr }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Compound Yield & Price Appreciation (Yearly Projection)</h2>
+    <form class="controls" id="inputForm" onsubmit="return false;">
+      <div>
+        <label for="yearsSimulatedSlider">Years: <span id="yearsSimulatedValue" class="control-value">4</span></label>
+        <input type="range" id="yearsSimulatedSlider" min="1" max="10" value="4" step="1">
+      </div>
+      <div>
+        <label for="initialDeposit">Initial Deposit: <span id="initialDepositValue" class="control-value">$27,579</span></label>
+        <input type="range" id="initialDeposit" min="1000" max="100000" step="100" value="27579">
+      </div>
+      <div>
+        <label for="dailyYield">Daily Yield: <span id="dailyYieldValue" class="control-value">$45.30</span></label>
+        <input type="range" id="dailyYield" min="0" max="500" step="0.10" value="45.30">
+      </div>
+      <div>
+        <label for="dailyTokenIncome">Daily Token Income: <span id="dailyTokenIncomeValue" class="control-value">$3</span></label>
+        <input type="range" id="dailyTokenIncome" min="0" max="20" step="1" value="3">
+      </div>
+      <div class="currency-switch">
+        <label for="currencySelect">Currency:</label>
+        <select id="currencySelect">
+          <option value="USD" selected>USD ($)</option>
+          <option value="EUR">EUR (€)</option>
+        </select>
+      </div>
+    </form>
+    <div class="config-card" id="configCard"></div>
+    <canvas id="incomeChart" width="620" height="320"></canvas>
+  </div>
+  <script>
+    let initialDeposit = 27579;
+    let dailyYield = 45.30;
+    let dailyTokenIncome = 3;
+    const annualPriceAppreciations = [0, 0.25, 0.50];
+    let yearsSimulated = 4;
+    let currency = "USD";
+    const usdToEurRate = 1 / 1.09;
+    const yearsSimulatedEl = document.getElementById('yearsSimulatedSlider');
+    const yearsSimulatedValEl = document.getElementById('yearsSimulatedValue');
+    const initialDepositEl = document.getElementById('initialDeposit');
+    const initialDepositValEl = document.getElementById('initialDepositValue');
+    const dailyYieldEl = document.getElementById('dailyYield');
+    const dailyYieldValEl = document.getElementById('dailyYieldValue');
+    const dailyTokenIncomeEl = document.getElementById('dailyTokenIncome');
+    const dailyTokenIncomeValEl = document.getElementById('dailyTokenIncomeValue');
+    const currencySelectEl = document.getElementById('currencySelect');
+    function currencyFormat(val, currency) {
+      const locale = currency === "EUR" ? "de-DE" : "en-US";
+      return val.toLocaleString(locale, { style: 'currency', currency, maximumFractionDigits: 0 });
+    }
+    function convertValue(val, from, to) {
+      if (from === to) return val;
+      if (from === "USD" && to === "EUR") return val * usdToEurRate;
+      if (from === "EUR" && to === "USD") return val / usdToEurRate;
+      return val;
+    }
+    function getLabels(yearsSimulated) {
+      return ['Current Day', ...Array.from({length: yearsSimulated}, (_, i) => `Year ${i+1}`)];
+    }
+    function getResults(yearsSimulated) {
+      const totalInitial = initialDeposit;
+      const dailyAddition = dailyYield + dailyTokenIncome;
+      const daysPerYear = 365;
+      return annualPriceAppreciations.map(appreciationRate => {
+        const appreciationResults = [];
+        appreciationResults.push({ year: 0, appreciatedAmount: totalInitial });
+        for (let t = 1; t <= yearsSimulated; t++) {
+          const added = dailyAddition * daysPerYear * t;
+          const base = totalInitial + added;
+          const appreciated = base * Math.pow(1 + appreciationRate, t);
+          appreciationResults.push({
+            year: t,
+            appreciatedAmount: appreciated,
+          });
+        }
+        return { appreciationRate, data: appreciationResults };
+      });
+    }
+    function getDatasets(results, currency) {
+      function getColor(idx, total) {
+        const base = 210;
+        const step = 360 / total;
+        return `hsl(${base + idx * step}, 65%, 48%)`;
+      }
+      return results.map((result, idx) => ({
+        label: `${(result.appreciationRate * 100).toFixed(0)}% Appreciation`,
+        data: result.data.map(res =>
+          +convertValue(res.appreciatedAmount, "USD", currency).toFixed(2)
+        ),
+        borderColor: getColor(idx, results.length),
+        backgroundColor: getColor(idx, results.length) + '55',
+        tension: 0.33,
+        pointRadius: 4,
+        pointHoverRadius: 7,
+        fill: false,
+        borderWidth: 2,
+      }));
+    }
+    function updateConfigCard(yearsSimulated, currency) {
+      const convertedDeposit = convertValue(initialDeposit, "USD", currency);
+      const convertedYield = convertValue(dailyYield, "USD", currency);
+      document.getElementById("configCard").innerHTML = `
+        <div><b>Initial Deposit:</b> ${currencyFormat(convertedDeposit, currency)}</div>
+        <div><b>Daily Yield:</b> ${currencyFormat(convertedYield, currency)}</div>
+        <div><b>Daily Token Income:</b> ${dailyTokenIncome}</div>
+        <div><b>Years Simulated:</b> ${yearsSimulated}</div>
+      `;
+    }
+    let incomeChart = null;
+    function renderChart(yearsSimulated, currency) {
+      const labels = getLabels(yearsSimulated);
+      const results = getResults(yearsSimulated);
+      const datasets = getDatasets(results, currency);
+      if (incomeChart) incomeChart.destroy();
+      const ctx = document.getElementById('incomeChart').getContext('2d');
+      incomeChart = new Chart(ctx, {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: {
+              display: true,
+              position: 'bottom',
+              labels: {
+                font: { size: 15, weight: 600 },
+                usePointStyle: true,
+                padding: 16,
+              }
+            },
+            tooltip: {
+              callbacks: {
+                title: ctx => ctx[0].label,
+                label: ctx => ` ${ctx.dataset.label}: ${currencyFormat(ctx.raw, currency)}`
+              },
+              backgroundColor: '#222',
+              titleColor: '#fff',
+              bodyColor: '#fff',
+              borderColor: '#1a73e8',
+              borderWidth: 1.5,
+              caretPadding: 7,
+              caretSize: 7,
+            }
+          },
+          animation: { duration: 1200, easing: 'easeOutQuart' },
+          scales: {
+            x: {
+              ticks: { font: { size: 14, weight: 500 } },
+              grid: { display: false }
+            },
+            y: {
+              beginAtZero: true,
+              title: { display: true, text: `Appreciated Total (${currency})` },
+              ticks: {
+                callback: value => currencyFormat(value, currency),
+                font: { size: 13 }
+              },
+              grid: { color: '#eee', borderDash: [2, 4] }
+            }
+          }
+        }
+      });
+    }
+    function setUpSliders() {
+      yearsSimulatedEl.addEventListener('input', function() {
+        yearsSimulated = +this.value;
+        yearsSimulatedValEl.textContent = yearsSimulated;
+        updateConfigCard(yearsSimulated, currency);
+        renderChart(yearsSimulated, currency);
+      });
+      initialDepositEl.addEventListener('input', function() {
+        initialDeposit = +this.value;
+        initialDepositValEl.textContent = currencyFormat(convertValue(initialDeposit, "USD", currency), currency);
+        updateConfigCard(yearsSimulated, currency);
+        renderChart(yearsSimulated, currency);
+      });
+      dailyYieldEl.addEventListener('input', function() {
+        dailyYield = +this.value;
+        dailyYieldValEl.textContent = currencyFormat(convertValue(dailyYield, "USD", currency), currency);
+        updateConfigCard(yearsSimulated, currency);
+        renderChart(yearsSimulated, currency);
+      });
+      dailyTokenIncomeEl.addEventListener('input', function() {
+        dailyTokenIncome = +this.value;
+        dailyTokenIncomeValEl.textContent = dailyTokenIncome;
+        updateConfigCard(yearsSimulated, currency);
+        renderChart(yearsSimulated, currency);
+      });
+    }
+    function initialize() {
+      currencySelectEl.value = currency;
+      yearsSimulatedValEl.textContent = yearsSimulated;
+      initialDepositValEl.textContent = currencyFormat(initialDeposit, currency);
+      dailyYieldValEl.textContent = currencyFormat(dailyYield, currency);
+      dailyTokenIncomeValEl.textContent = dailyTokenIncome;
+      updateConfigCard(yearsSimulated, currency);
+      renderChart(yearsSimulated, currency);
+      setUpSliders();
+      currencySelectEl.addEventListener('change', function() {
+        currency = this.value;
+        initialDepositValEl.textContent = currencyFormat(initialDeposit, currency);
+        dailyYieldValEl.textContent = currencyFormat(dailyYield, currency);
+        updateConfigCard(yearsSimulated, currency);
+        renderChart(yearsSimulated, currency);
+      });
+    }
+    window.onload = initialize;
+  </script>
+</body>
+</html>
