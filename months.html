@@ -63,10 +63,10 @@
   </div>
   <script>
     let monthsSimulated = 12;
-    let initialDeposit = 27579;
-    let dailyYield = 45.3;
-    let dailyTokenIncome = 3;
-    let annualPriceAppreciations = [0, 0.25, 0.5];
+    let initialDeposit = 27_803;
+    let dailyYield = 25.64;
+    let dailyTokenIncome = 2.5;
+    let annualPriceAppreciations = [0.25, 0.5, 0.75, 1];
     let currency = "USD";
     const usdToEurRate = 1 / 1.09;
 
@@ -96,19 +96,19 @@
       return ['Current'].concat([...Array(monthsSimulated)].map((_, i) => `Month ${i+1}`));
     }
 
-    function getResults(monthsSimulated, initialDeposit, dailyYield, dailyTokenIncome, appreciationRates) {
+    function getCompoundedResults(monthsSimulated, initialDeposit, dailyYield, dailyTokenIncome, appreciationRates) {
       const daysPerMonth = 30.4375;
-      const totalInitial = initialDeposit;
-      const dailyAddition = dailyYield + dailyTokenIncome;
       return appreciationRates.map(appreciationRate => {
         const appreciationResults = [];
-        appreciationResults.push({ month: 0, appreciatedAmount: totalInitial });
+        let balance = initialDeposit;
+        appreciationResults.push({ month: 0, appreciatedAmount: balance });
         for (let m = 1; m <= monthsSimulated; m++) {
-          const years = m / 12;
-          const added = dailyAddition * Math.round(daysPerMonth * m);
-          const base = totalInitial + added;
-          const appreciated = base * Math.pow(1 + appreciationRate, years);
-          appreciationResults.push({ month: m, appreciatedAmount: appreciated });
+          for (let d = 0; d < Math.round(daysPerMonth); d++) {
+            balance += dailyYield;
+            balance += dailyTokenIncome;
+            balance *= Math.pow(1 + appreciationRate, 1/365.25);
+          }
+          appreciationResults.push({ month: m, appreciatedAmount: balance });
         }
         return { appreciationRate, data: appreciationResults };
       });
@@ -133,21 +133,79 @@
       }));
     }
 
+    function estimateCompoundedTotal(initialDeposit, dailyYield, dailyTokenIncome, monthsSimulated, appreciationRate = 0) {
+      const daysPerMonth = 30.4375;
+      const totalDays = Math.round(monthsSimulated * daysPerMonth);
+      let balance = initialDeposit;
+      let yieldSum = 0;
+      let tokenSum = 0;
+      for (let i = 0; i < totalDays; i++) {
+        balance += dailyYield;
+        yieldSum += dailyYield;
+        balance += dailyTokenIncome;
+        tokenSum += dailyTokenIncome;
+        balance *= Math.pow(1 + appreciationRate, 1/365.25);
+      }
+      return {
+        finalBalance: balance,
+        yieldSum,
+        tokenSum
+      };
+    }
+
+    function calculateAPR(initialDeposit, dailyYield) {
+      if (initialDeposit === 0) return 0;
+      return ((dailyYield * 365) / initialDeposit) * 100;
+    }
+    function calculateAPY(initialDeposit, dailyYield) {
+      if (initialDeposit === 0) return 0;
+      const dailyRate = dailyYield / initialDeposit;
+      return (Math.pow(1 + dailyRate, 365) - 1) * 100;
+    }
+    function calculateROI(initialDeposit, totalEarnings) {
+      if (initialDeposit === 0) return 0;
+      return (totalEarnings / initialDeposit) * 100;
+    }
+    function calculateCAGR(initialDeposit, finalBalance, monthsSimulated) {
+      if (initialDeposit === 0) return 0;
+      const years = monthsSimulated / 12;
+      return (Math.pow(finalBalance / initialDeposit, 1 / years) - 1) * 100;
+    }
+
     function updateConfigCard() {
       const deposit = currencyFormat(convertValue(initialDeposit, "USD", currency), currency);
       const yieldVal = currencyFormat(convertValue(dailyYield, "USD", currency), currency);
+      const apr = calculateAPR(initialDeposit, dailyYield);
+      const apy = calculateAPY(initialDeposit, dailyYield);
+
+      const { finalBalance, yieldSum, tokenSum } = estimateCompoundedTotal(initialDeposit, dailyYield, dailyTokenIncome, monthsSimulated, 0);
+
+      const yieldSumFormatted = currencyFormat(convertValue(yieldSum, "USD", currency), currency);
+      const tokenSumFormatted = currencyFormat(convertValue(tokenSum, "USD", currency), currency);
+      const totalEarnings = yieldSum + tokenSum;
+      const totalEarningsFormatted = currencyFormat(convertValue(totalEarnings, "USD", currency), currency);
+
+      const roi = calculateROI(initialDeposit, totalEarnings);
+      const cagr = calculateCAGR(initialDeposit, finalBalance, monthsSimulated);
+      const totalEstFormatted = currencyFormat(convertValue(finalBalance, "USD", currency), currency);
+
       configListEl.innerHTML = `
         <div><b>Initial Deposit:</b> ${deposit}</div>
-        <div><b>Daily Yield:</b> ${yieldVal}</div>
-        <div><b>Daily Token Income:</b> ${dailyTokenIncome}</div>
-        <div><b>Months Simulated:</b> ${monthsSimulated}</div>
+        <div><b>Total Yield Earned:</b> ${yieldSumFormatted}</div>
+        <div><b>Total Token Income Earned:</b> ${tokenSumFormatted}</div>
+        <div><b>Total Earnings (Yield + Token):</b> ${totalEarningsFormatted}</div>
+        <div><b>ROI:</b> ${roi.toFixed(2)}%</div>
+        <div><b>APR (annualized rate):</b> ${apr.toFixed(2)}%</div>
+        <div><b>APY (compounded daily):</b> ${apy.toFixed(2)}%</div>
+        <div><b>CAGR (annualized growth):</b> ${cagr.toFixed(2)}%</div>
+        <div><b>Est. Total After Simulation:</b> ${totalEstFormatted}</div>
       `;
     }
 
     let incomeChart = null;
     function renderChart() {
       const labels = getLabels(monthsSimulated);
-      const results = getResults(monthsSimulated, initialDeposit, dailyYield, dailyTokenIncome, annualPriceAppreciations);
+      const results = getCompoundedResults(monthsSimulated, initialDeposit, dailyYield, dailyTokenIncome, annualPriceAppreciations);
       const datasets = getDatasets(results, currency);
 
       if (incomeChart) incomeChart.destroy();

@@ -13,7 +13,7 @@
       padding: 2rem;
     }
     .container {
-      max-width: 650px;
+      max-width: 700px;
       margin: 2rem auto;
       padding: 2rem;
       background: #fff;
@@ -62,17 +62,17 @@
       border: 1.5px solid #4686f7;
     }
     .config-card {
+      background: #f1f3f7;
+      border-radius: 0.8rem;
+      padding: 1.1rem 1.5rem;
+      margin-bottom: 1.8rem;
+      box-shadow: 0 1px 4px #0001;
+      font-size: 1rem;
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 0.5rem 1.5rem;
-      background: #f1f3f7;
-      border-radius: 0.8rem;
-      padding: 1rem 1.5rem;
-      margin-bottom: 2.2rem;
-      box-shadow: 0 1px 4px #0001;
-      font-size: 1rem;
-      min-height: 4.2rem;
       align-items: center;
+      min-height: unset;
     }
     .config-card b { font-weight: 600; }
     canvas { margin-top: 1rem; }
@@ -116,13 +116,14 @@
     <canvas id="incomeChart" width="620" height="320"></canvas>
   </div>
   <script>
-    let initialDeposit = 27579;
-    let dailyYield = 45.30;
-    let dailyTokenIncome = 3;
-    const annualPriceAppreciations = [0, 0.25, 0.50];
+    let initialDeposit = 28_058;
+    let dailyYield = 25.84;
+    let dailyTokenIncome = 2.5;
+    const annualPriceAppreciations = [0.25, 0.50, 0.75, 1];
     let yearsSimulated = 4;
     let currency = "USD";
     const usdToEurRate = 1 / 1.09;
+
     const yearsSimulatedEl = document.getElementById('yearsSimulatedSlider');
     const yearsSimulatedValEl = document.getElementById('yearsSimulatedValue');
     const initialDepositEl = document.getElementById('initialDeposit');
@@ -132,6 +133,7 @@
     const dailyTokenIncomeEl = document.getElementById('dailyTokenIncome');
     const dailyTokenIncomeValEl = document.getElementById('dailyTokenIncomeValue');
     const currencySelectEl = document.getElementById('currencySelect');
+
     function currencyFormat(val, currency) {
       const locale = currency === "EUR" ? "de-DE" : "en-US";
       return val.toLocaleString(locale, { style: 'currency', currency, maximumFractionDigits: 0 });
@@ -145,25 +147,25 @@
     function getLabels(yearsSimulated) {
       return ['Current Day', ...Array.from({length: yearsSimulated}, (_, i) => `Year ${i+1}`)];
     }
-    function getResults(yearsSimulated) {
-      const totalInitial = initialDeposit;
-      const dailyAddition = dailyYield + dailyTokenIncome;
+
+    function getCompoundedResults(yearsSimulated, initialDeposit, dailyYield, dailyTokenIncome, appreciationRates) {
       const daysPerYear = 365;
-      return annualPriceAppreciations.map(appreciationRate => {
+      return appreciationRates.map(appreciationRate => {
         const appreciationResults = [];
-        appreciationResults.push({ year: 0, appreciatedAmount: totalInitial });
+        let balance = initialDeposit;
+        appreciationResults.push({ year: 0, appreciatedAmount: balance });
         for (let t = 1; t <= yearsSimulated; t++) {
-          const added = dailyAddition * daysPerYear * t;
-          const base = totalInitial + added;
-          const appreciated = base * Math.pow(1 + appreciationRate, t);
-          appreciationResults.push({
-            year: t,
-            appreciatedAmount: appreciated,
-          });
+          for (let d = 0; d < daysPerYear; d++) {
+            balance += dailyYield;
+            balance += dailyTokenIncome;
+            balance *= Math.pow(1 + appreciationRate, 1/daysPerYear);
+          }
+          appreciationResults.push({ year: t, appreciatedAmount: balance });
         }
         return { appreciationRate, data: appreciationResults };
       });
     }
+
     function getDatasets(results, currency) {
       function getColor(idx, total) {
         const base = 210;
@@ -184,20 +186,79 @@
         borderWidth: 2,
       }));
     }
+
+    function estimateCompoundedTotal(initialDeposit, dailyYield, dailyTokenIncome, yearsSimulated, appreciationRate = 0) {
+      const daysPerYear = 365;
+      const totalDays = yearsSimulated * daysPerYear;
+      let balance = initialDeposit;
+      let yieldSum = 0;
+      let tokenSum = 0;
+      for (let i = 0; i < totalDays; i++) {
+        balance += dailyYield;
+        yieldSum += dailyYield;
+        balance += dailyTokenIncome;
+        tokenSum += dailyTokenIncome;
+        balance *= Math.pow(1 + appreciationRate, 1/daysPerYear);
+      }
+      return {
+        finalBalance: balance,
+        yieldSum,
+        tokenSum
+      };
+    }
+    function calculateAPR(initialDeposit, dailyYield) {
+      if (initialDeposit === 0) return 0;
+      return ((dailyYield * 365) / initialDeposit) * 100;
+    }
+    function calculateAPY(initialDeposit, dailyYield) {
+      if (initialDeposit === 0) return 0;
+      const dailyRate = dailyYield / initialDeposit;
+      return (Math.pow(1 + dailyRate, 365) - 1) * 100;
+    }
+    function calculateROI(initialDeposit, totalEarnings) {
+      if (initialDeposit === 0) return 0;
+      return (totalEarnings / initialDeposit) * 100;
+    }
+    function calculateCAGR(initialDeposit, finalBalance, yearsSimulated) {
+      if (initialDeposit === 0) return 0;
+      return (Math.pow(finalBalance / initialDeposit, 1 / yearsSimulated) - 1) * 100;
+    }
+
     function updateConfigCard(yearsSimulated, currency) {
-      const convertedDeposit = convertValue(initialDeposit, "USD", currency);
-      const convertedYield = convertValue(dailyYield, "USD", currency);
+      const deposit = currencyFormat(convertValue(initialDeposit, "USD", currency), currency);
+      const yieldVal = currencyFormat(convertValue(dailyYield, "USD", currency), currency);
+
+      const { finalBalance, yieldSum, tokenSum } = estimateCompoundedTotal(
+        initialDeposit, dailyYield, dailyTokenIncome, yearsSimulated, 0
+      );
+      const yieldSumFormatted = currencyFormat(convertValue(yieldSum, "USD", currency), currency);
+      const tokenSumFormatted = currencyFormat(convertValue(tokenSum, "USD", currency), currency);
+      const totalEarnings = yieldSum + tokenSum;
+      const totalEarningsFormatted = currencyFormat(convertValue(totalEarnings, "USD", currency), currency);
+
+      const roi = calculateROI(initialDeposit, totalEarnings);
+      const apr = calculateAPR(initialDeposit, dailyYield);
+      const apy = calculateAPY(initialDeposit, dailyYield);
+      const cagr = calculateCAGR(initialDeposit, finalBalance, yearsSimulated);
+      const totalEstFormatted = currencyFormat(convertValue(finalBalance, "USD", currency), currency);
+
       document.getElementById("configCard").innerHTML = `
-        <div><b>Initial Deposit:</b> ${currencyFormat(convertedDeposit, currency)}</div>
-        <div><b>Daily Yield:</b> ${currencyFormat(convertedYield, currency)}</div>
-        <div><b>Daily Token Income:</b> ${dailyTokenIncome}</div>
-        <div><b>Years Simulated:</b> ${yearsSimulated}</div>
+        <div><b>Initial Deposit:</b> ${deposit}</div>
+        <div><b>Total Yield Earned:</b> ${yieldSumFormatted}</div>
+        <div><b>Total Token Income Earned:</b> ${tokenSumFormatted}</div>
+        <div><b>Total Earnings (Yield + Token):</b> ${totalEarningsFormatted}</div>
+        <div><b>ROI:</b> ${roi.toFixed(2)}%</div>
+        <div><b>APR (annualized rate):</b> ${apr.toFixed(2)}%</div>
+        <div><b>APY (compounded daily):</b> ${apy.toFixed(2)}%</div>
+        <div><b>CAGR (annualized growth):</b> ${cagr.toFixed(2)}%</div>
+        <div><b>Est. Total After Simulation:</b> ${totalEstFormatted}</div>
       `;
     }
+
     let incomeChart = null;
     function renderChart(yearsSimulated, currency) {
       const labels = getLabels(yearsSimulated);
-      const results = getResults(yearsSimulated);
+      const results = getCompoundedResults(yearsSimulated, initialDeposit, dailyYield, dailyTokenIncome, annualPriceAppreciations);
       const datasets = getDatasets(results, currency);
       if (incomeChart) incomeChart.destroy();
       const ctx = document.getElementById('incomeChart').getContext('2d');
@@ -249,6 +310,7 @@
         }
       });
     }
+
     function setUpSliders() {
       yearsSimulatedEl.addEventListener('input', function() {
         yearsSimulated = +this.value;
